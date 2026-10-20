@@ -25,6 +25,57 @@ const GRAPH_API_VERSION = process.env.META_GRAPH_API_VERSION || "v25.0";
 /** @type {Array<Object>} */
 const leads = [];
 const leadIds = new Set();
+const LEAD_FIELDS = "id,created_time,field_data";
+const LEAD_FETCH_ATTEMPTS = 3;
+const LEAD_FETCH_RETRY_DELAY_MS = 2500;
+
+const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+/**
+ * Meta can send a leadgen webhook before the submitted answers are available
+ * from the lead endpoint. Retry briefly instead of broadcasting an empty card.
+ */
+async function fetchLeadWithFields(leadgenId) {
+  let lastError;
+
+  for (let attempt = 1; attempt <= LEAD_FETCH_ATTEMPTS; attempt += 1) {
+    try {
+      const response = await axios.get(
+        `https://graph.facebook.com/${GRAPH_API_VERSION}/${leadgenId}`,
+        {
+          params: {
+            fields: LEAD_FIELDS,
+            access_token: PAGE_ACCESS_TOKEN,
+          },
+        }
+      );
+
+      if (Array.isArray(response.data?.field_data) && response.data.field_data.length) {
+        console.log(
+          `[Graph API] ✅ Fetched lead fields on attempt ${attempt}/${LEAD_FETCH_ATTEMPTS}`
+        );
+        return response.data;
+      }
+
+      lastError = new Error("Meta returned the lead before field_data was ready");
+      console.warn(
+        `[Graph API] Field data not ready (attempt ${attempt}/${LEAD_FETCH_ATTEMPTS})`
+      );
+    } catch (err) {
+      lastError = err;
+      const message = err.response?.data?.error?.message || err.message;
+      console.warn(
+        `[Graph API] Fetch failed (attempt ${attempt}/${LEAD_FETCH_ATTEMPTS}): ${message}`
+      );
+    }
+
+    if (attempt < LEAD_FETCH_ATTEMPTS) {
+      await delay(LEAD_FETCH_RETRY_DELAY_MS);
+    }
+  }
+
+  throw lastError;
+}
 
 function storeLead(lead) {
   if (!lead?.id || leadIds.has(lead.id)) {
@@ -130,24 +181,14 @@ app.post("/webhook", async (req, res) => {
 
       if (PAGE_ACCESS_TOKEN && leadgenId) {
         try {
-          const url = `https://graph.facebook.com/${GRAPH_API_VERSION}/${leadgenId}`;
-          const response = await axios.get(url, {
-            // Meta does not always include the submitted answers in its default
-            // response. Request field_data explicitly so the mobile app receives
-            // the name, email, phone number, and any custom form answers.
-            params: {
-              fields: "id,created_time,field_data",
-              access_token: PAGE_ACCESS_TOKEN,
-            },
-          });
+          const response = await fetchLeadWithFields(leadgenId);
           leadData = {
             ...leadData,
-            ...response.data,
+            ...response,
             receivedAt: new Date().toISOString(),
           };
-          console.log("[Graph API] ✅ Fetched full lead data");
         } catch (err) {
-          console.error("[Graph API] ❌ Failed to fetch lead:", err.message);
+          console.error("[Graph API] ❌ Failed to fetch lead fields:", err.message);
           console.log("[Graph API] Using raw webhook data instead");
         }
       } else {
