@@ -121,6 +121,16 @@ app.get("/leads", (req, res) => {
   res.json({ leads });
 });
 
+// ── DELETE /leads – reset temporary demo data ────────────────────────────────
+app.delete("/leads", (req, res) => {
+  const deletedCount = leads.length;
+  leads.length = 0;
+  leadIds.clear();
+  broadcast("leads_cleared", { deletedCount });
+  console.log(`[Store] 🗑️ Cleared ${deletedCount} temporary lead(s)`);
+  res.json({ success: true, deletedCount });
+});
+
 // ── GET /webhook – Meta webhook verification handshake ────────────────────────
 app.get("/webhook", (req, res) => {
   const mode = req.query["hub.mode"];
@@ -264,8 +274,8 @@ wss.on("connection", (ws, req) => {
  * Broadcast a new lead to all connected WebSocket clients.
  * @param {Object} lead
  */
-function broadcastLead(lead) {
-  const payload = JSON.stringify({ type: "new_lead", data: lead });
+function broadcast(type, data) {
+  const payload = JSON.stringify({ type, data });
   let sentCount = 0;
   wss.clients.forEach((client) => {
     if (client.readyState === WebSocket.OPEN) {
@@ -273,7 +283,11 @@ function broadcastLead(lead) {
       sentCount++;
     }
   });
-  console.log(`[WS] 📡 Broadcasted lead to ${sentCount} client(s)`);
+  console.log(`[WS] 📡 Broadcasted ${type} to ${sentCount} client(s)`);
+}
+
+function broadcastLead(lead) {
+  broadcast("new_lead", lead);
 }
 
 // ─── Start ───────────────────────────────────────────────────────────────────

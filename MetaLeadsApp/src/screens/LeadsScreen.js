@@ -6,6 +6,8 @@ import {
   StyleSheet,
   Animated,
   ActivityIndicator,
+  Alert,
+  Pressable,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import useWebSocket from "../hooks/useWebSocket";
@@ -147,7 +149,7 @@ function EmptyState({ status }) {
 
 // ─── Main Screen ──────────────────────────────────────────────────────────────
 export default function LeadsScreen() {
-  const { leads, status } = useWebSocket();
+  const { leads, status, clearLeads } = useWebSocket();
   const insets = useSafeAreaInsets();
 
   // Track which lead IDs are "new" (arrived after initial load)
@@ -171,6 +173,27 @@ export default function LeadsScreen() {
 
   const keyExtractor = useCallback((item) => String(item.id), []);
 
+  const confirmClear = useCallback(() => {
+    Alert.alert(
+      "Clear demo leads?",
+      "This removes the temporary leads shown in this demo app. Your Meta form and Page are not affected.",
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Clear",
+          style: "destructive",
+          onPress: async () => {
+            try {
+              await clearLeads();
+            } catch (error) {
+              Alert.alert("Could not clear leads", "Check that the backend is Live and try again.");
+            }
+          },
+        },
+      ]
+    );
+  }, [clearLeads]);
+
   return (
     <View style={[styles.container, { paddingTop: insets.top }]}>
       {/* Header */}
@@ -181,7 +204,14 @@ export default function LeadsScreen() {
             {leads.length} lead{leads.length !== 1 ? "s" : ""} received
           </Text>
         </View>
-        <StatusPill status={status} />
+        <View style={styles.headerActions}>
+          {leads.length > 0 && (
+            <Pressable style={styles.clearButton} onPress={confirmClear}>
+              <Text style={styles.clearButtonText}>Clear</Text>
+            </Pressable>
+          )}
+          <StatusPill status={status} />
+        </View>
       </View>
 
       {/* List */}
@@ -243,6 +273,23 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: TEXT_SECONDARY,
     marginTop: 2,
+  },
+  headerActions: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
+  clearButton: {
+    borderWidth: 1,
+    borderColor: "#475569",
+    borderRadius: 16,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+  },
+  clearButtonText: {
+    color: "#cbd5e1",
+    fontSize: 12,
+    fontWeight: "700",
   },
 
   // Status pill

@@ -14,6 +14,7 @@ const defaultUrl =
     ? "ws://localhost:3000"
     : `ws://${LOCAL_IP}:3000`;
 const WS_URL = process.env.EXPO_PUBLIC_WS_URL || defaultUrl;
+const API_BASE_URL = WS_URL.replace(/^wss:/, "https:").replace(/^ws:/, "http:");
 
 const RECONNECT_INTERVAL_MS = 3000;
 
@@ -68,6 +69,9 @@ export default function useWebSocket() {
             }
             return [message.data, ...prev];
           });
+        } else if (message.type === "leads_cleared") {
+          console.log("[WS] Demo leads cleared");
+          setLeads([]);
         }
       } catch (err) {
         console.error("[WS] Failed to parse message:", err.message);
@@ -111,5 +115,13 @@ export default function useWebSocket() {
     };
   }, [connect]);
 
-  return { leads, status };
+  const clearLeads = useCallback(async () => {
+    const response = await fetch(`${API_BASE_URL}/leads`, { method: "DELETE" });
+    if (!response.ok) {
+      throw new Error("Could not clear demo leads");
+    }
+    setLeads([]);
+  }, []);
+
+  return { leads, status, clearLeads };
 }

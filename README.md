@@ -182,6 +182,7 @@ The lead will appear in the app immediately.
 | `GET` | `/webhook` | Meta webhook verification |
 | `POST` | `/webhook` | Receive Meta leadgen events |
 | `GET` | `/leads` | Fetch all stored leads |
+| `DELETE` | `/leads` | Clear temporary demo leads |
 | `POST` | `/test-lead` | Inject a mock lead (testing) |
 | `WS` | `/` | WebSocket for real-time push |
 
