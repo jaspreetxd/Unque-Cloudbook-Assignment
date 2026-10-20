@@ -1,6 +1,7 @@
 services:
   - type: web
     name: unque-meta-leads-backend
+    plan: free
     runtime: node
     rootDir: backend
     buildCommand: npm ci --omit=dev
