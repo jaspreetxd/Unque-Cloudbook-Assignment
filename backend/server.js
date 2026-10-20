@@ -19,10 +19,22 @@ const axios = require("axios");
 const PORT = process.env.PORT || 3000;
 const VERIFY_TOKEN = process.env.WEBHOOK_VERIFY_TOKEN || "my_super_secret_token_123";
 const PAGE_ACCESS_TOKEN = process.env.META_PAGE_ACCESS_TOKEN || "";
+const GRAPH_API_VERSION = process.env.META_GRAPH_API_VERSION || "v25.0";
 
 // ─── In-memory lead store ─────────────────────────────────────────────────────
 /** @type {Array<Object>} */
 const leads = [];
+const leadIds = new Set();
+
+function storeLead(lead) {
+  if (!lead?.id || leadIds.has(lead.id)) {
+    return false;
+  }
+
+  leadIds.add(lead.id);
+  leads.unshift(lead);
+  return true;
+}
 
 // ─── Express App ─────────────────────────────────────────────────────────────
 const app = express();
@@ -37,6 +49,20 @@ app.get("/", (req, res) => {
     leadsCount: leads.length,
     connectedClients: wss ? wss.clients.size : 0,
   });
+});
+
+// ── Privacy policy – required by Meta Instant Forms ──────────────────────────
+app.get("/privacy-policy", (req, res) => {
+  res.type("html").send(`<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>UnQue Meta Leads Demo Privacy Policy</title>
+<style>body{font-family:system-ui,sans-serif;max-width:720px;margin:48px auto;padding:0 20px;line-height:1.6;color:#172033}h1{line-height:1.2}</style>
+</head><body>
+<h1>Privacy Policy</h1>
+<p>This test lead form is part of the UnQue Meta Leads Demo proof of concept.</p>
+<p>Contact details submitted through the form are used only to demonstrate real-time lead delivery to the demo application. They are not sold or shared with third parties.</p>
+<p>Demo lead data is stored temporarily and can be removed on request through the Facebook Page that provided this form.</p>
+</body></html>`);
 });
 
 // ── GET /leads – return all stored leads (for initial app load) ───────────────
@@ -104,8 +130,16 @@ app.post("/webhook", async (req, res) => {
 
       if (PAGE_ACCESS_TOKEN && leadgenId) {
         try {
-          const url = `https://graph.facebook.com/v19.0/${leadgenId}?access_token=${PAGE_ACCESS_TOKEN}`;
-          const response = await axios.get(url);
+          const url = `https://graph.facebook.com/${GRAPH_API_VERSION}/${leadgenId}`;
+          const response = await axios.get(url, {
+            // Meta does not always include the submitted answers in its default
+            // response. Request field_data explicitly so the mobile app receives
+            // the name, email, phone number, and any custom form answers.
+            params: {
+              fields: "id,created_time,field_data",
+              access_token: PAGE_ACCESS_TOKEN,
+            },
+          });
           leadData = {
             ...leadData,
             ...response.data,
@@ -122,8 +156,11 @@ app.post("/webhook", async (req, res) => {
         );
       }
 
-      // Store locally
-      leads.unshift(leadData); // newest first
+      // Meta may deliver the same webhook more than once. Only surface a lead once.
+      if (!storeLead(leadData)) {
+        console.log(`[Store] Duplicate lead ignored: ${leadData.id}`);
+        continue;
+      }
       console.log(`[Store] Total leads: ${leads.length}`);
 
       // Broadcast to all WebSocket clients
@@ -147,7 +184,7 @@ app.post("/test-lead", (req, res) => {
     page_id: "mock_page",
   };
 
-  leads.unshift(mockLead);
+  storeLead(mockLead);
   broadcastLead(mockLead);
   console.log("[Test] 🧪 Mock lead injected:", mockLead.id);
   res.json({ success: true, lead: mockLead });

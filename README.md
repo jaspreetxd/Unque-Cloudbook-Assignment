@@ -71,7 +71,8 @@ UnQue Assignment/
 
 ```bash
 cd backend
-cp .env.example .env
+# Windows PowerShell: Copy-Item .env.example .env
+# macOS/Linux: cp .env.example .env
 # Fill in .env with your Meta credentials (see Step 3)
 npm start
 ```
@@ -88,6 +89,26 @@ ngrok http 3000
 ```
 
 Copy the **Forwarding URL** (e.g. `https://abc123.ngrok-free.app`).
+
+### Host the backend on Render (optional, replaces ngrok)
+
+The repository includes a `render.yaml` Blueprint for the `backend/` service.
+It installs only the backend dependencies and prompts you to enter the webhook
+verify token and Page access token securely in Render. Do not commit `.env`.
+
+1. Push this repository to GitHub.
+2. In Render, choose **New** → **Blueprint**, then select the repository.
+3. Enter the two prompted secret values from your local `backend/.env`.
+4. After deployment, copy the public service URL, for example
+   `https://unque-meta-leads-backend.onrender.com`.
+5. In Meta Webhooks, change the callback URL to
+   `https://unque-meta-leads-backend.onrender.com/webhook` and verify it.
+6. In `MetaLeadsApp/.env`, set
+   `EXPO_PUBLIC_WS_URL=wss://unque-meta-leads-backend.onrender.com`, then
+   restart Expo.
+
+Render terminates HTTPS for the public URL, so the mobile app must use `wss://`
+instead of `ws://` when it connects to the hosted backend.
 
 ---
 
@@ -109,17 +130,22 @@ Copy the **Forwarding URL** (e.g. `https://abc123.ngrok-free.app`).
 
 **Android Emulator (recommended for demo):**
 ```bash
+# PowerShell: $env:EXPO_PUBLIC_WS_URL="ws://10.0.2.2:3000"
 cd MetaLeadsApp
 npm run android
 ```
 
 **Physical Device (via Expo Go):**
-1. Edit `src/hooks/useWebSocket.js` line 8:
-   ```js
-   const WS_URL = "ws://<YOUR_LOCAL_IP>:3000";
+1. Find your computer's LAN IP (for example, `192.168.1.20`) and ensure the
+   phone and computer are on the same Wi-Fi network.
+2. In PowerShell, run:
+   ```powershell
+   $env:EXPO_PUBLIC_WS_URL="ws://192.168.1.20:3000"
+   npx expo start
    ```
-2. Run: `npx expo start`
-3. Scan the QR code with Expo Go
+3. Scan the QR code with Expo Go. The project currently has `192.168.1.6` as a
+   fallback for the existing device-demo setup; the environment variable takes
+   priority and is read at bundle time, so restart Expo after changing it.
 
 > **Note**: Android emulator uses `ws://10.0.2.2:3000` to reach localhost. iOS simulator uses `ws://localhost:3000`.
 
@@ -194,7 +220,7 @@ The lead will appear in the app immediately.
 
 1. **In-memory storage**: Leads are stored in a JS array (no database). They reset on server restart. A production system would use PostgreSQL/MongoDB.
 2. **Single Page**: The POC is designed for a single Facebook Page. Multi-page support would require dynamic token management.
-3. **Android emulator default**: The WS URL is set to `10.0.2.2:3000` for Android emulator. Physical device users must update it to their machine's local IP.
+3. **WebSocket URL**: The app's current fallback is configured for the existing physical-device LAN address (`192.168.1.6`). Set `EXPO_PUBLIC_WS_URL` to override it—use `ws://10.0.2.2:3000` for an Android emulator, `ws://localhost:3000` for an iOS simulator, or your host's LAN IP for another phone.
 4. **No auth on WebSocket**: Any client that knows the server URL can connect. Production would require JWT/token auth on the WS handshake.
 5. **No HTTPS on local server**: ngrok provides the TLS termination for Meta's webhook; the local server itself is plain HTTP.
 6. **Lead field data**: If no `PAGE_ACCESS_TOKEN` is configured, the app shows only the raw webhook payload (lead ID, form ID). With a token, full field data (name, email, phone) is fetched from Graph API.

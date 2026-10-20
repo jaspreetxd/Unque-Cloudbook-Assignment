@@ -1,10 +1,19 @@
 import { useState, useEffect, useRef, useCallback } from "react";
+import { Platform } from "react-native";
 
 // ─── Configuration ────────────────────────────────────────────────────────────
-// For Android emulator use: ws://10.0.2.2:3000
-// For iOS simulator   use: ws://localhost:3000
-// For physical device use: ws://<your-machine-local-ip>:3000
-const WS_URL = "ws://10.0.2.2:3000";
+// Set EXPO_PUBLIC_WS_URL before starting Expo when using a physical phone or a
+// hosted backend. Example: EXPO_PUBLIC_WS_URL=ws://192.168.1.20:3000.
+// This LAN address preserves the existing device-demo setup; replace it only if
+// the computer's address changes. Android emulators can instead use 10.0.2.2.
+const LOCAL_IP = "192.168.1.6";
+const defaultUrl =
+  Platform.OS === "android"
+    ? `ws://${LOCAL_IP}:3000`
+    : Platform.OS === "ios"
+    ? "ws://localhost:3000"
+    : `ws://${LOCAL_IP}:3000`;
+const WS_URL = process.env.EXPO_PUBLIC_WS_URL || defaultUrl;
 
 const RECONNECT_INTERVAL_MS = 3000;
 
@@ -19,6 +28,7 @@ export default function useWebSocket() {
   const wsRef = useRef(null);
   const reconnectTimerRef = useRef(null);
   const mountedRef = useRef(true);
+  const connectRef = useRef(null);
 
   const connect = useCallback(() => {
     if (!mountedRef.current) return;
@@ -52,7 +62,12 @@ export default function useWebSocket() {
         } else if (message.type === "new_lead") {
           // A new lead arrived – prepend it so it appears at top
           console.log("[WS] 🆕 New lead received:", message.data?.id);
-          setLeads((prev) => [message.data, ...prev]);
+          setLeads((prev) => {
+            if (prev.some((lead) => lead.id === message.data?.id)) {
+              return prev;
+            }
+            return [message.data, ...prev];
+          });
         }
       } catch (err) {
         console.error("[WS] Failed to parse message:", err.message);
@@ -65,14 +80,21 @@ export default function useWebSocket() {
       setStatus("disconnected");
       // Auto-reconnect
       reconnectTimerRef.current = setTimeout(() => {
-        if (mountedRef.current) connect();
+        if (mountedRef.current) connectRef.current?.();
       }, RECONNECT_INTERVAL_MS);
     };
 
-    ws.onerror = (err) => {
-      console.error("[WS] Error:", err.message);
+    ws.onerror = () => {
+      // React Native's WebSocket error event usually has no message. The close
+      // handler below updates the status and reconnects, so avoid triggering a
+      // noisy LogBox error with an unhelpful "undefined" value.
+      console.log("[WS] Connection issue; reconnecting…");
     };
   }, []);
+
+  useEffect(() => {
+    connectRef.current = connect;
+  }, [connect]);
 
   useEffect(() => {
     mountedRef.current = true;
